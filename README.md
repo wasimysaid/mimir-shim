@@ -6,7 +6,7 @@ release workflow, checksums, and binary release assets.
 
 ## Install
 
-Linux/macOS/Git Bash:
+Linux or Windows Git Bash:
 
 ```sh
 curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
@@ -41,9 +41,6 @@ $env:MIMIR_INSTALL_DIR = "$env:USERPROFILE\.mimir\bin"; irm https://mimir.kernel
 ## Supported platforms
 
 - Linux x64: `mimir-linux-x64.tar.gz`
-- Linux arm64: `mimir-linux-arm64.tar.gz`
-- macOS x64: `mimir-darwin-x64.tar.gz`
-- macOS arm64: `mimir-darwin-arm64.tar.gz`
 - Windows x64 from Git Bash/MSYS/Cygwin or native PowerShell: `mimir-windows-x64.zip`
 
 ## Cloudflare redirect

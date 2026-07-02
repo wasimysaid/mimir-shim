@@ -103,24 +103,13 @@ detect_platform() {
             ;;
     esac
 
-    if [[ "$os" == "darwin" && "$arch" == "x64" ]]; then
-        local rosetta
-        rosetta="$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)"
-        if [[ "$rosetta" == "1" ]]; then
-            arch="arm64"
-        fi
-    fi
 
     case "$os-$arch" in
-        linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
+        linux-x64|windows-x64)
             printf '%s-%s' "$os" "$arch"
             ;;
-        windows-arm64)
-            echo -e "${RED}Windows arm64 is not published yet${NC}" >&2
-            exit 1
-            ;;
         *)
-            echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}" >&2
+            echo -e "${RED}Only Linux x64 and Windows x64 release assets are published. Detected: $os/$arch${NC}" >&2
             exit 1
             ;;
     esac

@@ -16,7 +16,7 @@ Usage: scripts/build-release.sh --platform <platform> [options]
 Options:
     --source-dir <path>   Private cersei checkout. Default: SOURCE_DIR or .
     --out <path>          Output directory. Default: OUT_DIR or release-assets
-    --platform <name>     linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64
+    --platform <name>     linux-x64, windows-x64
     --version <version>   Expected mimir --version output, with or without v
     --no-locked           Do not pass --locked to cargo
 EOF
@@ -63,7 +63,7 @@ if [[ -z "$PLATFORM" ]]; then
 fi
 
 case "$PLATFORM" in
-    linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64) ;;
+    linux-x64|windows-x64) ;;
     *)
         echo "Unsupported platform: $PLATFORM" >&2
         exit 1

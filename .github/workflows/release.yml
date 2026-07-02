@@ -124,12 +124,6 @@ jobs:
         include:
           - platform: linux-x64
             runner: ubuntu-latest
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-          - platform: darwin-x64
-            runner: macos-13
-          - platform: darwin-arm64
-            runner: macos-14
           - platform: windows-x64
             runner: windows-2022
     runs-on: ${{ matrix.runner }}
@@ -206,9 +200,6 @@ jobs:
 
           expected_assets=(
             mimir-linux-x64.tar.gz
-            mimir-linux-arm64.tar.gz
-            mimir-darwin-x64.tar.gz
-            mimir-darwin-arm64.tar.gz
             mimir-windows-x64.zip
           )
 
@@ -228,9 +219,6 @@ jobs:
           ## Assets
 
           - linux x64: \`mimir-linux-x64.tar.gz\`
-          - linux arm64: \`mimir-linux-arm64.tar.gz\`
-          - macOS x64: \`mimir-darwin-x64.tar.gz\`
-          - macOS arm64: \`mimir-darwin-arm64.tar.gz\`
           - Windows x64: \`mimir-windows-x64.zip\`
 
           Verify downloads with \`SHA256SUMS\`.
@@ -266,14 +254,11 @@ jobs:
             --title "$RELEASE_TAG" \
             --notes-file RELEASE_NOTES.md \
             mimir-linux-x64.tar.gz \
-            mimir-linux-arm64.tar.gz \
-            mimir-darwin-x64.tar.gz \
-            mimir-darwin-arm64.tar.gz \
             mimir-windows-x64.zip \
             RELEASE_NOTES.md \
             SHA256SUMS
 
-          expected_asset_names="$(printf '%s\n' mimir-linux-x64.tar.gz mimir-linux-arm64.tar.gz mimir-darwin-x64.tar.gz mimir-darwin-arm64.tar.gz mimir-windows-x64.zip SHA256SUMS RELEASE_NOTES.md | sort)"
+          expected_asset_names="$(printf '%s\n' mimir-linux-x64.tar.gz mimir-windows-x64.zip SHA256SUMS RELEASE_NOTES.md | sort)"
           actual_asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort)"
           if [[ "$actual_asset_names" != "$expected_asset_names" ]]; then
             echo "::error::Draft GitHub Release asset set does not match expected files."
