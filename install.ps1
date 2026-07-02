@@ -67,11 +67,11 @@ function Normalize-MimirVersion {
 }
 
 function Assert-WindowsX64 {
-    $isWindows = $env:OS -eq "Windows_NT"
+    $runningOnWindows = $env:OS -eq "Windows_NT"
     if ((Get-Variable -Name IsWindows -Scope Global -ErrorAction SilentlyContinue) -and -not $global:IsWindows) {
-        $isWindows = $false
+        $runningOnWindows = $false
     }
-    if (-not $isWindows) {
+    if (-not $runningOnWindows) {
         throw "install.ps1 supports Windows only. Use install.sh on Linux/macOS."
     }
 
