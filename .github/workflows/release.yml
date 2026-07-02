@@ -59,6 +59,8 @@ jobs:
           bash -n install.sh
           bash -n scripts/build-release.sh
 
+          test -f install.ps1
+
       - name: Smoke-test local binary install path
         shell: bash
         run: |
@@ -77,10 +79,43 @@ jobs:
           MIMIR_INSTALL_DIR="$tmp/bin" ./install.sh --binary "$fake" --no-modify-path
           "$tmp/bin/mimir" --version | grep -Fx "0.0.0-test"
 
+
+  windows-installer-check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout shim
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate and smoke-test PowerShell installer
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version 2.0
+          $ErrorActionPreference = "Stop"
+          Get-Command .\install.ps1 | Out-Null
+          .\install.ps1 -Help | Out-String | Select-String "Mimir Windows Installer" | Out-Null
+
+          $tmp = New-Item -ItemType Directory -Path ([IO.Path]::Combine([IO.Path]::GetTempPath(), [Guid]::NewGuid().ToString("N")))
+          try {
+            $fake = Join-Path $tmp.FullName "mimir.exe"
+            Set-Content -LiteralPath $fake -Value "fake mimir" -NoNewline
+            $installDir = Join-Path $tmp.FullName "bin"
+            .\install.ps1 -Binary $fake -InstallDir $installDir -NoModifyPath
+            if (-not (Test-Path -LiteralPath (Join-Path $installDir "mimir.exe") -PathType Leaf)) {
+              throw "PowerShell installer did not copy mimir.exe"
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $tmp.FullName -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
   build:
     needs:
       - prepare
       - installer-check
+
+      - windows-installer-check
     permissions:
       contents: read
     strategy:

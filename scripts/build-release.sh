@@ -108,6 +108,20 @@ if [[ -n "$VERSION" ]]; then
     fi
 fi
 
+to_powershell_path() {
+    local path="$1"
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -w "$path"
+    else
+        printf '%s' "$path"
+    fi
+}
+
+escape_powershell_single_quoted() {
+    printf '%s' "$1" | sed "s/'/''/g"
+}
+
+
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mimir-package.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -120,11 +134,15 @@ if [[ "$PLATFORM" == windows-* ]]; then
     if command -v zip >/dev/null 2>&1; then
         (cd "$stage_dir" && zip -q -r "$OUT_DIR/$asset" .)
     elif command -v powershell.exe >/dev/null 2>&1; then
+        stage_dir_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$stage_dir")")"
+        asset_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$OUT_DIR/$asset")")"
         powershell.exe -NoProfile -NonInteractive -Command \
-            "Compress-Archive -Path '$stage_dir/*' -DestinationPath '$OUT_DIR/$asset' -Force"
+            "\$ErrorActionPreference = 'Stop'; Compress-Archive -Path (Join-Path '$stage_dir_ps' '*') -DestinationPath '$asset_ps' -Force"
     elif command -v pwsh >/dev/null 2>&1; then
+        stage_dir_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$stage_dir")")"
+        asset_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$OUT_DIR/$asset")")"
         pwsh -NoProfile -NonInteractive -Command \
-            "Compress-Archive -Path '$stage_dir/*' -DestinationPath '$OUT_DIR/$asset' -Force"
+            "\$ErrorActionPreference = 'Stop'; Compress-Archive -Path (Join-Path '$stage_dir_ps' '*') -DestinationPath '$asset_ps' -Force"
     else
         echo "zip, powershell.exe, or pwsh is required to create Windows archives" >&2
         exit 1
@@ -150,11 +168,15 @@ if [[ "$PLATFORM" == windows-* ]]; then
     if command -v unzip >/dev/null 2>&1; then
         unzip -q "$OUT_DIR/$asset" -d "$verify_dir"
     elif command -v powershell.exe >/dev/null 2>&1; then
+        asset_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$OUT_DIR/$asset")")"
+        verify_dir_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$verify_dir")")"
         powershell.exe -NoProfile -NonInteractive -Command \
-            "Expand-Archive -Path '$OUT_DIR/$asset' -DestinationPath '$verify_dir' -Force"
+            "\$ErrorActionPreference = 'Stop'; Expand-Archive -Path '$asset_ps' -DestinationPath '$verify_dir_ps' -Force"
     elif command -v pwsh >/dev/null 2>&1; then
+        asset_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$OUT_DIR/$asset")")"
+        verify_dir_ps="$(escape_powershell_single_quoted "$(to_powershell_path "$verify_dir")")"
         pwsh -NoProfile -NonInteractive -Command \
-            "Expand-Archive -Path '$OUT_DIR/$asset' -DestinationPath '$verify_dir' -Force"
+            "\$ErrorActionPreference = 'Stop'; Expand-Archive -Path '$asset_ps' -DestinationPath '$verify_dir_ps' -Force"
     else
         echo "unzip, powershell.exe, or pwsh is required to verify Windows archives" >&2
         exit 1

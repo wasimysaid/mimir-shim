@@ -6,20 +6,36 @@ release workflow, checksums, and binary release assets.
 
 ## Install
 
+Linux/macOS/Git Bash:
+
 ```sh
-curl -fsSL https://<your-cloudflare-domain>/install.sh | sh
+curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
 
 Pin a release:
 
 ```sh
-curl -fsSL https://<your-cloudflare-domain>/install.sh | sh -s -- --version 0.1.9
+curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.9
+```
+
+```powershell
+$env:MIMIR_VERSION = "0.1.9"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
 
 Install into a custom directory:
 
 ```sh
-MIMIR_INSTALL_DIR=/usr/local/bin curl -fsSL https://<your-cloudflare-domain>/install.sh | sh
+MIMIR_INSTALL_DIR=/usr/local/bin curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
+```
+
+```powershell
+$env:MIMIR_INSTALL_DIR = "$env:USERPROFILE\.mimir\bin"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
 
 ## Supported platforms
@@ -28,18 +44,20 @@ MIMIR_INSTALL_DIR=/usr/local/bin curl -fsSL https://<your-cloudflare-domain>/ins
 - Linux arm64: `mimir-linux-arm64.tar.gz`
 - macOS x64: `mimir-darwin-x64.tar.gz`
 - macOS arm64: `mimir-darwin-arm64.tar.gz`
-- Windows x64 from Git Bash/MSYS/Cygwin: `mimir-windows-x64.zip`
+- Windows x64 from Git Bash/MSYS/Cygwin or native PowerShell: `mimir-windows-x64.zip`
 
 ## Cloudflare redirect
 
 Configure Cloudflare for the install domain/path, for example:
 
-- Source: `https://<your-cloudflare-domain>/install.sh`
+- Source: `https://mimir.kernelvm.xyz/install.sh`
 - Target: `https://raw.githubusercontent.com/wasimysaid/mimir-shim/main/install.sh`
+- Source: `https://mimir.kernelvm.xyz/install.ps1`
+- Target: `https://raw.githubusercontent.com/wasimysaid/mimir-shim/main/install.ps1`
 - Status: `302` while testing, `301` after stable
 
 If the public shim repo is not `wasimysaid/mimir-shim`, update `MIMIR_RELEASE_REPO` in
-`install.sh` before publishing.
+`install.sh` and `install.ps1` before publishing.
 
 ## Required GitHub secret
 

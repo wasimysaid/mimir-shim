@@ -25,8 +25,8 @@ Options:
         --no-modify-path    Do not modify shell config files
 
 Examples:
-    curl -fsSL https://<your-cloudflare-domain>/install.sh | sh
-    curl -fsSL https://<your-cloudflare-domain>/install.sh | sh -s -- --version 0.1.9
+    curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
+    curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.9
     ./install.sh --binary ./target/release/mimir
 EOF
 }
