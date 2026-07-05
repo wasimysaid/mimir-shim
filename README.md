@@ -12,6 +12,9 @@ Linux or Windows Git Bash:
 curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
 ```
 
+
+Google Colab uses `/bin/sh` and starts in `/content`; the same command installs to `/usr/local/bin` there so `mimir` is available immediately.
+
 Windows PowerShell:
 
 ```powershell

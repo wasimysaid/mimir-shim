@@ -57,6 +57,8 @@ jobs:
           set -euo pipefail
           bash -n install
           bash -n install.sh
+
+          sh -n install.sh
           bash -n scripts/build-release.sh
 
           test -f install.ps1
@@ -68,15 +70,15 @@ jobs:
           tmp="$(mktemp -d)"
           fake="$tmp/mimir"
           cat > "$fake" <<'EOF'
-          #!/usr/bin/env bash
-          if [[ "${1:-}" == "--version" ]]; then
+          #!/bin/sh
+          if [ "${1:-}" = "--version" ]; then
             echo "0.0.0-test"
             exit 0
           fi
           echo "fake mimir"
           EOF
           chmod +x "$fake"
-          MIMIR_INSTALL_DIR="$tmp/bin" ./install.sh --binary "$fake" --no-modify-path
+          MIMIR_INSTALL_DIR="$tmp/bin" sh ./install.sh --binary "$fake" --no-modify-path
           "$tmp/bin/mimir" --version | grep -Fx "0.0.0-test"
 
 
