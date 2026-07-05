@@ -83,15 +83,29 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
 cd "$SOURCE_DIR"
 
-echo "==> Building Mimir for $PLATFORM"
-cargo build -p mimir-cli --bin mimir --release $CARGO_FLAGS
-
+cargo_target=""
 binary="target/release/mimir"
 archive_ext=".tar.gz"
+if [[ "$PLATFORM" == linux-* ]]; then
+    cargo_target="x86_64-unknown-linux-musl"
+    binary="target/$cargo_target/release/mimir"
+fi
 if [[ "$PLATFORM" == windows-* ]]; then
     binary="target/release/mimir.exe"
     archive_ext=".zip"
 fi
+
+cargo_args=(build -p mimir-cli --bin mimir --release)
+if [[ -n "$cargo_target" ]]; then
+    cargo_args+=(--target "$cargo_target")
+fi
+if [[ -n "$CARGO_FLAGS" ]]; then
+    # shellcheck disable=SC2206
+    cargo_args+=($CARGO_FLAGS)
+fi
+
+echo "==> Building Mimir for $PLATFORM"
+cargo "${cargo_args[@]}"
 
 if [[ ! -f "$binary" ]]; then
     echo "Built binary not found: $binary" >&2

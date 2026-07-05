@@ -20,13 +20,13 @@ Usage: install.sh [options]
 
 Options:
     -h, --help              Display this help message
-    -v, --version <version> Install a specific version, for example 0.1.9
+    -v, --version <version> Install a specific version, for example 0.1.10
     -b, --binary <path>     Install from a local binary instead of downloading
         --no-modify-path    Do not modify shell config files
 
 Examples:
     curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
-    curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.9
+    curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.10
     ./install.sh --binary ./target/release/mimir
 EOF
 }

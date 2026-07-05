@@ -11,7 +11,7 @@ Typical usage:
   irm https://mimir.kernelvm.xyz/install.ps1 | iex
 
 Pinned release:
-  $env:MIMIR_VERSION = "0.1.9"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
+  $env:MIMIR_VERSION = "0.1.10"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
 #>
 [CmdletBinding()]
 param(
@@ -41,14 +41,14 @@ Usage:
   irm https://mimir.kernelvm.xyz/install.ps1 | iex
 
 Environment variables for irm | iex usage:
-  MIMIR_VERSION          Install a specific version, for example 0.1.9
+  MIMIR_VERSION          Install a specific version, for example 0.1.10
   MIMIR_INSTALL_DIR      Install directory. Default: `%USERPROFILE%\.mimir\bin
   MIMIR_RELEASE_REPO     Release repo. Default: wasimysaid/mimir-shim
   MIMIR_BINARY           Install from a local binary instead of downloading
   MIMIR_NO_MODIFY_PATH   Set to 1 to skip user PATH changes
 
 Direct file usage:
-  powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.9
+  powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.10
   pwsh -File .\install.ps1 -Binary .\target\release\mimir.exe
 "@
 }

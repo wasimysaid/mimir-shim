@@ -21,11 +21,11 @@ irm https://mimir.kernelvm.xyz/install.ps1 | iex
 Pin a release:
 
 ```sh
-curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.9
+curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.10
 ```
 
 ```powershell
-$env:MIMIR_VERSION = "0.1.9"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
+$env:MIMIR_VERSION = "0.1.10"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
 
 Install into a custom directory:
@@ -66,7 +66,7 @@ access to the private source repository.
 
 1. Tag or choose a source ref in the private `wasimysaid/mimir` repo.
 2. Run the public shim repo's `Release Mimir` workflow manually.
-3. Provide `version` without or with `v`, for example `0.1.9`.
+3. Provide `version` without or with `v`, for example `0.1.10`.
 4. Optionally provide `source_ref`; otherwise the workflow builds `v<version>`.
 5. The workflow builds the matrix, smoke-tests `mimir --version`, creates
    `SHA256SUMS`, stages a draft GitHub Release, validates the asset set, and
