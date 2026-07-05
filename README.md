@@ -64,10 +64,10 @@ access to the private source repository.
 
 ## Release process
 
-1. Tag or choose a source ref in the private `wasimysaid/mimir` repo.
+1. Push or tag the desired source ref in the private `wasimysaid/mimir` repo.
 2. Run the public shim repo's `Release Mimir` workflow manually.
 3. Provide `version` without or with `v`, for example `0.1.10`.
-4. Optionally provide `source_ref`; otherwise the workflow builds `v<version>`.
+4. Optionally provide `source_ref`; otherwise the workflow builds `main`. Pass `v<version>` for tagged releases.
 5. The workflow builds the matrix, smoke-tests `mimir --version`, creates
    `SHA256SUMS`, stages a draft GitHub Release, validates the asset set, and
    publishes the release.

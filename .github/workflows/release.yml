@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       source_ref:
-        description: "Private source ref to build. Defaults to v<version>."
+        description: "Private source ref to build. Defaults to main; pass v<version> for tagged releases."
         required: false
         type: string
 
@@ -35,7 +35,7 @@ jobs:
           release_tag="v${release_version}"
           source_ref="${{ inputs.source_ref }}"
           if [[ -z "$source_ref" ]]; then
-            source_ref="$release_tag"
+            source_ref="main"
           fi
           {
             echo "release_version=$release_version"
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout shim
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
@@ -84,7 +84,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout shim
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
@@ -129,13 +129,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout shim
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: shim
           persist-credentials: false
 
       - name: Checkout private Mimir source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: wasimysaid/mimir
           ref: ${{ needs.prepare.outputs.source_ref }}
@@ -172,7 +172,7 @@ jobs:
             --version "${{ needs.prepare.outputs.release_version }}"
 
       - name: Upload release asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: mimir-${{ matrix.platform }}
           path: |
@@ -195,7 +195,7 @@ jobs:
       SOURCE_REF: ${{ needs.prepare.outputs.source_ref }}
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: downloaded-assets
 
