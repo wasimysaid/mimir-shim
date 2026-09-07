@@ -71,7 +71,7 @@ real public installers before the workflow marks the release latest. A failed
 installation leaves the candidate as a prerelease for diagnosis; published assets
 are not overwritten.
 
-`MIMIR_SOURCE_TOKEN` is a read-only credential for the private Mimir source
+`MIMIR_SOURCE_SSH_KEY` is a read-only deploy key for the private Mimir source
 checkout. Release assets contain binaries and skill documentation, never source
 archives, credentials, sessions, or integration traces. Detailed plugin integration
 tests run separately in the private integration CI repository.

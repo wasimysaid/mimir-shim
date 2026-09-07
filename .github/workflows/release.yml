@@ -22,16 +22,20 @@ jobs:
       version: ${{ steps.source.outputs.version }}
       source: ${{ steps.source.outputs.source }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: wasimysaid/mimir
+          ref: ${{ inputs.source_ref }}
+          ssh-key: ${{ secrets.MIMIR_SOURCE_SSH_KEY }}
+          persist-credentials: false
       - id: source
         env:
           VERSION: ${{ inputs.version }}
-          SOURCE_REF: ${{ inputs.source_ref }}
-          GH_TOKEN: ${{ secrets.MIMIR_SOURCE_TOKEN }}
         run: |
           set -euo pipefail
           version=${VERSION#v}
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          source=$(gh api "repos/wasimysaid/mimir/commits/$SOURCE_REF" --jq .sha)
+          source=$(git rev-parse HEAD)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "source=$source" >> "$GITHUB_OUTPUT"
   build:
@@ -61,7 +65,7 @@ jobs:
         with:
           repository: wasimysaid/mimir
           ref: ${{ needs.prepare.outputs.source }}
-          token: ${{ secrets.MIMIR_SOURCE_TOKEN }}
+          ssh-key: ${{ secrets.MIMIR_SOURCE_SSH_KEY }}
           path: source
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
