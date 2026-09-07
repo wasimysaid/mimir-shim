@@ -1,79 +1,80 @@
-# Mimir public release shim
+# Install Mimir
 
-This directory is the template for the public Mimir shim repository. The private
-source stays in `wasimysaid/mimir`; this repository only hosts the installer,
-release workflow, checksums, and binary release assets.
+This repository publishes Mimir installers, binary releases, and the
+`configure-mimir` skill. The Mimir source repository remains private.
 
-## Install
-
-Linux or Windows Git Bash:
+Linux, macOS, or Windows Git Bash:
 
 ```sh
 curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
 ```
 
-
-Google Colab uses `/bin/sh` and starts in `/content`; the same command installs to `/usr/local/bin` there so `mimir` is available immediately.
-
-Windows PowerShell:
+Native Windows PowerShell (5.1 or 7):
 
 ```powershell
 irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
 
-Pin a release:
+The installer checks the archive checksum, verifies that the executable runs,
+and installs the complete `configure-mimir` skill to
+`~/.agents/skills/configure-mimir`. Mimir discovers it globally, outside any
+particular project. Updating replaces this supplied skill and its references;
+other skills, settings, credentials, and plugins are untouched.
+
+| Platform | Archive |
+| --- | --- |
+| Linux x64 (static musl) | `mimir-linux-x64.tar.gz` |
+| Windows x64 | `mimir-windows-x64.zip` |
+| macOS Intel | `mimir-darwin-x64.tar.gz` |
+| macOS Apple Silicon | `mimir-darwin-arm64.tar.gz` |
+
+The shell installer detects Rosetta and selects the native Apple Silicon build.
+Linux ARM64 and Windows ARM64 are not published. Installation needs no Rust or
+Node toolchain. The shell installer uses curl, tar and sha256sum or shasum;
+Git Bash also supplies cygpath. PowerShell uses its built-in download and ZIP
+commands. macOS binaries are not notarized.
+
+## Options
 
 ```sh
-curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.1.10
+# Pin a release.
+curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --version 0.2.3
+# Apply the environment setting to the installer, not just to curl.
+curl -fsSL https://mimir.kernelvm.xyz/install.sh | MIMIR_INSTALL_DIR=/usr/local/bin sh
+# Leave shell configuration unchanged.
+curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh -s -- --no-modify-path
 ```
 
 ```powershell
-$env:MIMIR_VERSION = "0.1.10"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
+$env:MIMIR_VERSION = '0.2.3'
+$env:MIMIR_INSTALL_DIR = "$env:USERPROFILE\.mimir\bin"
+irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
 
-Install into a custom directory:
+Binary location: `MIMIR_INSTALL_DIR`, then `XDG_BIN_DIR` (shell installer), then
+`~/.mimir/bin`. Root-owned Google Colab notebooks default to `/usr/local/bin`.
+The skill location is independent of `MIMIR_CODING_AGENT_DIR`, matching Mimir's
+normal global skill discovery. Git Bash and PowerShell use the native Windows
+user home. Open a new terminal after installation for persistent PATH changes.
 
-```sh
-MIMIR_INSTALL_DIR=/usr/local/bin curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
-```
+Rerun the installer to upgrade or repair the same version, including missing skill
+files. Close a running Windows Mimir before replacing its executable. For local
+development, `install.sh --binary PATH` or `install.ps1 -Binary PATH` installs
+only that executable and performs no downloads.
 
-```powershell
-$env:MIMIR_INSTALL_DIR = "$env:USERPROFILE\.mimir\bin"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
-```
+## Releases
 
-## Supported platforms
+Run the `Release Mimir` workflow with a version matching the source and an exact
+source ref. It resolves the ref once, builds all four native archives with their
+matching skill, and publishes a prerelease candidate. Native runners execute the
+real public installers before the workflow marks the release latest. A failed
+installation leaves the candidate as a prerelease for diagnosis; published assets
+are not overwritten.
 
-- Linux x64: `mimir-linux-x64.tar.gz`
-- Windows x64 from Git Bash/MSYS/Cygwin or native PowerShell: `mimir-windows-x64.zip`
+`MIMIR_SOURCE_TOKEN` is a read-only credential for the private Mimir source
+checkout. Release assets contain binaries and skill documentation, never source
+archives, credentials, sessions, or integration traces. Detailed plugin integration
+tests run separately in the private integration CI repository.
 
-## Cloudflare redirect
-
-Configure Cloudflare for the install domain/path, for example:
-
-- Source: `https://mimir.kernelvm.xyz/install.sh`
-- Target: `https://raw.githubusercontent.com/wasimysaid/mimir-shim/main/install.sh`
-- Source: `https://mimir.kernelvm.xyz/install.ps1`
-- Target: `https://raw.githubusercontent.com/wasimysaid/mimir-shim/main/install.ps1`
-- Status: `302` while testing, `301` after stable
-
-If the public shim repo is not `wasimysaid/mimir-shim`, update `MIMIR_RELEASE_REPO` in
-`install.sh` and `install.ps1` before publishing.
-
-## Required GitHub secret
-
-`MIMIR_SOURCE_TOKEN` must be a read-only fine-grained token or deploy credential
-that can checkout the private `wasimysaid/mimir` repository. Do not grant write
-access to the private source repository.
-
-## Release process
-
-1. Push or tag the desired source ref in the private `wasimysaid/mimir` repo.
-2. Run the public shim repo's `Release Mimir` workflow manually.
-3. Provide `version` without or with `v`, for example `0.1.10`.
-4. Optionally provide `source_ref`; otherwise the workflow builds `main`. Pass `v<version>` for tagged releases.
-5. The workflow builds the matrix, smoke-tests `mimir --version`, creates
-   `SHA256SUMS`, stages a draft GitHub Release, validates the asset set, and
-   publishes the release.
-
-The public release must contain only binary archives, `SHA256SUMS`, and release
-notes. Never upload source archives from the private repository.
+The install domain redirects `/install.sh` and `/install.ps1` to the corresponding
+files on this repository's `main` branch. Archive downloads use GitHub Releases.

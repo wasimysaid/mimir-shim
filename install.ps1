@@ -1,286 +1,110 @@
-<#
-.SYNOPSIS
-Installs Mimir for Windows.
-
-.DESCRIPTION
-Downloads the published Windows x64 Mimir release asset from GitHub,
-verifies SHA256SUMS, extracts mimir.exe, and adds the install directory to the
-current user's PATH.
-
-Typical usage:
-  irm https://mimir.kernelvm.xyz/install.ps1 | iex
-
-Pinned release:
-  $env:MIMIR_VERSION = "0.1.10"; irm https://mimir.kernelvm.xyz/install.ps1 | iex
-#>
+<# Install Mimir and its configure-mimir skill on native Windows. #>
 [CmdletBinding()]
 param(
     [string]$Version = $env:MIMIR_VERSION,
-    [string]$InstallDir = $(if ($env:MIMIR_INSTALL_DIR) { $env:MIMIR_INSTALL_DIR } else { Join-Path $HOME ".mimir\bin" }),
-    [string]$ReleaseRepo = $(if ($env:MIMIR_RELEASE_REPO) { $env:MIMIR_RELEASE_REPO } else { "wasimysaid/mimir-shim" }),
+    [string]$InstallDir = $(if ($env:MIMIR_INSTALL_DIR) { $env:MIMIR_INSTALL_DIR } else { Join-Path $env:USERPROFILE '.mimir\bin' }),
+    [string]$ReleaseRepo = $(if ($env:MIMIR_RELEASE_REPO) { $env:MIMIR_RELEASE_REPO } else { 'wasimysaid/mimir-shim' }),
     [string]$Binary = $env:MIMIR_BINARY,
-    [switch]$NoModifyPath = $(
-        $env:MIMIR_NO_MODIFY_PATH -in @("1", "true", "TRUE", "yes", "YES")
-    ),
+    [switch]$NoModifyPath = ($env:MIMIR_NO_MODIFY_PATH -in @('1', 'true', 'yes')),
     [switch]$Help
 )
 
 Set-StrictMode -Version 2.0
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-$App = "mimir"
-$Target = "windows-x64"
-$ArchiveName = "$App-$Target.zip"
-$BinaryName = "$App.exe"
-
-function Show-Usage {
-    @"
-Mimir Windows Installer
-
-Usage:
-  irm https://mimir.kernelvm.xyz/install.ps1 | iex
-
-Environment variables for irm | iex usage:
-  MIMIR_VERSION          Install a specific version, for example 0.1.10
-  MIMIR_INSTALL_DIR      Install directory. Default: `%USERPROFILE%\.mimir\bin
-  MIMIR_RELEASE_REPO     Release repo. Default: wasimysaid/mimir-shim
-  MIMIR_BINARY           Install from a local binary instead of downloading
-  MIMIR_NO_MODIFY_PATH   Set to 1 to skip user PATH changes
-
-Direct file usage:
-  powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version 0.1.10
-  pwsh -File .\install.ps1 -Binary .\target\release\mimir.exe
-"@
+function Normalize-Version([string]$Value) {
+    return ($Value.Trim() -replace '^mimir ', '' -replace '^v', '')
 }
 
-function Normalize-MimirVersion {
-    param([Parameter(Mandatory = $true)][string]$Value)
-
-    $normalized = $Value.Trim()
-    if ($normalized.StartsWith("mimir ", [StringComparison]::OrdinalIgnoreCase)) {
-        $normalized = $normalized.Substring(6)
-    }
-    if ($normalized.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) {
-        $normalized = $normalized.Substring(1)
-    }
-    return $normalized
+function Download([string]$Uri, [string]$Destination) {
+    Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing -Headers @{ 'User-Agent' = 'mimir-installer' }
 }
 
-function Assert-WindowsX64 {
-    $runningOnWindows = $env:OS -eq "Windows_NT"
-    if ((Get-Variable -Name IsWindows -Scope Global -ErrorAction SilentlyContinue) -and -not $global:IsWindows) {
-        $runningOnWindows = $false
+function Add-InstallPath([string]$Directory) {
+    if ($env:GITHUB_PATH) { Add-Content -LiteralPath $env:GITHUB_PATH -Value $Directory -Encoding utf8 }
+    if ($NoModifyPath) { return }
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $entries = @($userPath -split ';' | Where-Object { $_ })
+    $present = @($entries | Where-Object {
+        [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -eq $Directory.TrimEnd('\')
+    }).Count -gt 0
+    if (-not $present) {
+        [Environment]::SetEnvironmentVariable('Path', (($entries + $Directory) -join ';'), 'User')
     }
-    if (-not $runningOnWindows) {
-        throw "install.ps1 supports Windows only. Use install.sh on Linux/macOS."
+    if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -eq $Directory.TrimEnd('\') })) {
+        $env:Path = "$Directory;$env:Path"
     }
-
-    $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-    switch -Regex ($arch) {
-        "^(AMD64|x86_64)$" { return }
-        "^ARM64$" { throw "Windows arm64 is not published yet." }
-        default { throw "Unsupported Windows architecture: $arch" }
-    }
-}
-
-function Invoke-MimirDownload {
-    param(
-        [Parameter(Mandatory = $true)][string]$Uri,
-        [Parameter(Mandatory = $true)][string]$OutFile
-    )
-
-    $parameters = @{
-        Uri = $Uri
-        OutFile = $OutFile
-        Headers = @{ "User-Agent" = "mimir-installer" }
-    }
-    if ($PSVersionTable.PSVersion.Major -lt 6) {
-        $parameters.UseBasicParsing = $true
-    }
-    Invoke-WebRequest @parameters
-}
-
-function Invoke-MimirRestJson {
-    param([Parameter(Mandatory = $true)][string]$Uri)
-
-    $parameters = @{
-        Uri = $Uri
-        Headers = @{ "User-Agent" = "mimir-installer" }
-    }
-    if ($PSVersionTable.PSVersion.Major -lt 6) {
-        $parameters.UseBasicParsing = $true
-    }
-    Invoke-RestMethod @parameters
-}
-
-function Get-LatestMimirVersion {
-    param([Parameter(Mandatory = $true)][string]$Repo)
-
-    $release = Invoke-MimirRestJson -Uri "https://api.github.com/repos/$Repo/releases/latest"
-    if (-not $release.tag_name) {
-        throw "Failed to resolve latest Mimir release from $Repo."
-    }
-    return Normalize-MimirVersion -Value ([string]$release.tag_name)
-}
-
-function Get-InstalledMimirVersion {
-    param([Parameter(Mandatory = $true)][string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return $null
-    }
-
-    try {
-        $output = & $Path --version 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $output) {
-            return $null
-        }
-        return Normalize-MimirVersion -Value ([string]$output)
-    }
-    catch {
-        return $null
-    }
-}
-
-function Get-ExpectedChecksum {
-    param(
-        [Parameter(Mandatory = $true)][string]$ChecksumsPath,
-        [Parameter(Mandatory = $true)][string]$FileName
-    )
-
-    foreach ($line in Get-Content -LiteralPath $ChecksumsPath) {
-        if ($line -match "^\s*([A-Fa-f0-9]{64})\s+\*?(.+?)\s*$") {
-            $hash = $Matches[1]
-            $name = Split-Path -Leaf $Matches[2]
-            if ($name -eq $FileName) {
-                return $hash.ToLowerInvariant()
-            }
-        }
-    }
-
-    throw "Checksum for $FileName is missing from SHA256SUMS."
-}
-
-function Assert-Checksum {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [Parameter(Mandatory = $true)][string]$ChecksumsPath
-    )
-
-    $fileName = Split-Path -Leaf $FilePath
-    $expected = Get-ExpectedChecksum -ChecksumsPath $ChecksumsPath -FileName $fileName
-    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $FilePath).Hash.ToLowerInvariant()
-    if ($actual -ne $expected) {
-        throw "Checksum mismatch for $fileName. Expected $expected, got $actual."
-    }
-}
-
-function Install-MimirBinary {
-    param(
-        [Parameter(Mandatory = $true)][string]$SourcePath,
-        [Parameter(Mandatory = $true)][string]$DestinationDir
-    )
-
-    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
-    $destinationPath = Join-Path $DestinationDir $BinaryName
-    Copy-Item -LiteralPath $SourcePath -Destination $destinationPath -Force
-    return $destinationPath
-}
-
-function Add-MimirToUserPath {
-    param([Parameter(Mandatory = $true)][string]$Directory)
-
-    if ($NoModifyPath) {
-        return
-    }
-
-    $fullDirectory = [IO.Path]::GetFullPath($Directory).TrimEnd('\')
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if (-not $userPath) {
-        $userPath = ""
-    }
-
-    $entries = $userPath -split ";" | Where-Object { $_ -ne "" }
-    foreach ($entry in $entries) {
-        try {
-            $normalizedEntry = [IO.Path]::GetFullPath($entry).TrimEnd('\')
-        }
-        catch {
-            continue
-        }
-
-        if ($normalizedEntry.Equals($fullDirectory, [StringComparison]::OrdinalIgnoreCase)) {
-            if ($env:Path -notlike "*$Directory*") {
-                $env:Path = "$Directory;$env:Path"
-            }
-            return
-        }
-    }
-
-    $newPath = if ($userPath.Trim()) { "$userPath;$fullDirectory" } else { $fullDirectory }
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    $env:Path = "$fullDirectory;$env:Path"
-    Write-Host "Added $fullDirectory to the current user's PATH. Open a new terminal to use mimir everywhere."
 }
 
 function Install-Mimir {
     if ($Help) {
-        Show-Usage
+        @'
+Mimir Windows Installer
+irm https://mimir.kernelvm.xyz/install.ps1 | iex
+
+Options: -Version VERSION -InstallDir PATH -NoModifyPath -Binary PATH
+For irm | iex, use MIMIR_VERSION, MIMIR_INSTALL_DIR, MIMIR_NO_MODIFY_PATH.
+Installs configure-mimir into %USERPROFILE%\.agents\skills\configure-mimir.
+-Binary installs only a local development executable without downloading skills.
+'@
         return
     }
+    if ($env:OS -ne 'Windows_NT') { throw 'Use install.sh on Linux/macOS.' }
+    $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    if ($architecture -notin @('AMD64', 'x86_64')) { throw "No Windows release for $architecture." }
 
-    Assert-WindowsX64
-
-    $installPath = Join-Path $InstallDir $BinaryName
-    if ($Binary) {
-        if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) {
-            throw "Binary not found: $Binary"
-        }
-        $installed = Install-MimirBinary -SourcePath $Binary -DestinationDir $InstallDir
-        Add-MimirToUserPath -Directory $InstallDir
-        Write-Host "Installed Mimir from local binary to $installed"
-        return
-    }
-
-    $resolvedVersion = if ($Version) { Normalize-MimirVersion -Value $Version } else { Get-LatestMimirVersion -Repo $ReleaseRepo }
-    $installedVersion = Get-InstalledMimirVersion -Path $installPath
-    if ($installedVersion -eq $resolvedVersion) {
-        Write-Host "Mimir $resolvedVersion is already installed."
-        return
-    }
-
-    $releaseTag = "v$resolvedVersion"
-    $baseUrl = "https://github.com/$ReleaseRepo/releases/download/$releaseTag"
-    $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("mimir-install-" + [Guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
-
+    $destination = [IO.Path]::GetFullPath($InstallDir)
+    New-Item -ItemType Directory -Force -Path $destination | Out-Null
+    $staging = Join-Path $destination ('.mimir-install-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $staging | Out-Null
     try {
-        $archivePath = Join-Path $tempDir $ArchiveName
-        $checksumsPath = Join-Path $tempDir "SHA256SUMS"
-        $extractDir = Join-Path $tempDir "extract"
-
-        Write-Host "Installing Mimir $resolvedVersion for $Target"
-        Invoke-MimirDownload -Uri "$baseUrl/$ArchiveName" -OutFile $archivePath
-        Invoke-MimirDownload -Uri "$baseUrl/SHA256SUMS" -OutFile $checksumsPath
-        Assert-Checksum -FilePath $archivePath -ChecksumsPath $checksumsPath
-
-        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-        Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
-
-        $mimirExe = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter $BinaryName -File | Select-Object -First 1
-        if (-not $mimirExe) {
-            throw "$ArchiveName did not contain $BinaryName."
+        $stagedBinary = Join-Path $staging 'mimir.exe'
+        if ($Binary) {
+            Copy-Item -LiteralPath $Binary -Destination $stagedBinary
         }
-
-        $installed = Install-MimirBinary -SourcePath $mimirExe.FullName -DestinationDir $InstallDir
-        Add-MimirToUserPath -Directory $InstallDir
-
-        $installedOutput = & $installed --version
-        Write-Host "Mimir $installedOutput installed to $installed"
-        Write-Host "Run: mimir"
+        else {
+            $resolved = $Version
+            if (-not $resolved) {
+                $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$ReleaseRepo/releases/latest" -Headers @{ 'User-Agent' = 'mimir-installer' }
+                $resolved = [string]$release.tag_name
+            }
+            $resolved = Normalize-Version $resolved
+            if (-not $resolved) { throw 'Could not resolve release version.' }
+            $baseUrl = "https://github.com/$ReleaseRepo/releases/download/v$resolved"
+            $archive = Join-Path $staging 'mimir-windows-x64.zip'
+            $checksums = Join-Path $staging 'SHA256SUMS'
+            Write-Host "Installing Mimir $resolved for Windows x64"
+            Download "$baseUrl/mimir-windows-x64.zip" $archive
+            Download "$baseUrl/SHA256SUMS" $checksums
+            $lines = @(Get-Content -LiteralPath $checksums | Where-Object { $_ -match '^([a-fA-F0-9]{64})\s+\*?mimir-windows-x64\.zip$' })
+            if ($lines.Count -ne 1) { throw 'Missing or duplicate archive checksum.' }
+            $expected = ($lines[0] -split '\s+')[0]
+            if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Archive checksum mismatch.' }
+            Expand-Archive -LiteralPath $archive -DestinationPath $staging -Force
+            if (-not (Test-Path -LiteralPath (Join-Path $staging 'skills\configure-mimir\SKILL.md') -PathType Leaf)) {
+                throw 'Release archive is missing configure-mimir.'
+            }
+        }
+        $actual = & $stagedBinary --version
+        if ($LASTEXITCODE -ne 0) { throw 'Downloaded executable could not run.' }
+        $actual = Normalize-Version ([string]$actual)
+        if (-not $Binary -and $actual -ne $resolved) { throw "Expected $resolved, archive contains $actual." }
+        # Windows refuses to replace an in-use executable; report that failure.
+        Move-Item -LiteralPath $stagedBinary -Destination (Join-Path $destination 'mimir.exe') -Force
+        if (-not $Binary) {
+            $skills = Join-Path $env:USERPROFILE '.agents\skills'
+            $skill = Join-Path $skills 'configure-mimir'
+            New-Item -ItemType Directory -Force -Path $skills | Out-Null
+            if (Test-Path -LiteralPath $skill) { Remove-Item -LiteralPath $skill -Recurse -Force }
+            Copy-Item -LiteralPath (Join-Path $staging 'skills\configure-mimir') -Destination $skill -Recurse
+            Write-Host "Installed skill: $skill"
+        }
+        Add-InstallPath $destination
+        Write-Host "Installed Mimir $actual to $destination\mimir.exe"
+        Write-Host 'Run: mimir. Open a new terminal to use it elsewhere.'
     }
     finally {
-        Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

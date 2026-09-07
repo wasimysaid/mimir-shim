@@ -1,314 +1,188 @@
 name: Release Mimir
-
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example 0.1.10 or v0.1.10"
+        description: Release version (must match the source)
         required: true
         type: string
       source_ref:
-        description: "Private source ref to build. Defaults to main; pass v<version> for tagged releases."
-        required: false
+        description: Private Mimir source ref
+        required: true
         type: string
-
-permissions: {}
-
+permissions:
+  contents: read
 concurrency:
   group: release-mimir-${{ inputs.version }}
   cancel-in-progress: false
-
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
-      release_version: ${{ steps.prepare.outputs.release_version }}
-      release_tag: ${{ steps.prepare.outputs.release_tag }}
-      source_ref: ${{ steps.prepare.outputs.source_ref }}
+      version: ${{ steps.source.outputs.version }}
+      source: ${{ steps.source.outputs.source }}
     steps:
-      - id: prepare
-        shell: bash
+      - id: source
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          GH_TOKEN: ${{ secrets.MIMIR_SOURCE_TOKEN }}
         run: |
           set -euo pipefail
-          release_version="${{ inputs.version }}"
-          release_version="${release_version#v}"
-          release_tag="v${release_version}"
-          source_ref="${{ inputs.source_ref }}"
-          if [[ -z "$source_ref" ]]; then
-            source_ref="main"
-          fi
-          {
-            echo "release_version=$release_version"
-            echo "release_tag=$release_tag"
-            echo "source_ref=$source_ref"
-          } >> "$GITHUB_OUTPUT"
-
-  installer-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout shim
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
-      - name: Validate shell scripts
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n install
-          bash -n install.sh
-
-          sh -n install.sh
-          bash -n scripts/build-release.sh
-
-          test -f install.ps1
-
-      - name: Smoke-test local binary install path
-        shell: bash
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp -d)"
-          fake="$tmp/mimir"
-          cat > "$fake" <<'EOF'
-          #!/bin/sh
-          if [ "${1:-}" = "--version" ]; then
-            echo "0.0.0-test"
-            exit 0
-          fi
-          echo "fake mimir"
-          EOF
-          chmod +x "$fake"
-          MIMIR_INSTALL_DIR="$tmp/bin" sh ./install.sh --binary "$fake" --no-modify-path
-          "$tmp/bin/mimir" --version | grep -Fx "0.0.0-test"
-
-
-  windows-installer-check:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout shim
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
-      - name: Validate and smoke-test PowerShell installer
-        shell: pwsh
-        run: |
-          Set-StrictMode -Version 2.0
-          $ErrorActionPreference = "Stop"
-          Get-Command .\install.ps1 | Out-Null
-          .\install.ps1 -Help | Out-String | Select-String "Mimir Windows Installer" | Out-Null
-
-          $tmp = New-Item -ItemType Directory -Path ([IO.Path]::Combine([IO.Path]::GetTempPath(), [Guid]::NewGuid().ToString("N")))
-          try {
-            $fake = Join-Path $tmp.FullName "mimir.exe"
-            Set-Content -LiteralPath $fake -Value "fake mimir" -NoNewline
-            $installDir = Join-Path $tmp.FullName "bin"
-            .\install.ps1 -Binary $fake -InstallDir $installDir -NoModifyPath
-            if (-not (Test-Path -LiteralPath (Join-Path $installDir "mimir.exe") -PathType Leaf)) {
-              throw "PowerShell installer did not copy mimir.exe"
-            }
-          }
-          finally {
-            Remove-Item -LiteralPath $tmp.FullName -Recurse -Force -ErrorAction SilentlyContinue
-          }
-
+          version=${VERSION#v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          source=$(gh api "repos/wasimysaid/mimir/commits/$SOURCE_REF" --jq .sha)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
   build:
-    needs:
-      - prepare
-      - installer-check
-
-      - windows-installer-check
-    permissions:
-      contents: read
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux-x64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - platform: windows-x64
             runner: windows-2022
+          - platform: darwin-x64
+            runner: macos-15-intel
+          - platform: darwin-arm64
+            runner: macos-15
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
     steps:
-      - name: Checkout shim
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           path: shim
           persist-credentials: false
-
-      - name: Checkout private Mimir source
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           repository: wasimysaid/mimir
-          ref: ${{ needs.prepare.outputs.source_ref }}
+          ref: ${{ needs.prepare.outputs.source }}
           token: ${{ secrets.MIMIR_SOURCE_TOKEN }}
           path: source
           persist-credentials: false
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-
-      - name: Install Linux musl target
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: source
+          shared-key: release-${{ matrix.platform }}
+      - name: Linux static target
         if: matrix.platform == 'linux-x64'
-        shell: bash
         run: |
-          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y musl-tools
           rustup target add x86_64-unknown-linux-musl
-      - name: Test version parsing
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build verified binary and skill archive
         shell: bash
-        working-directory: source
-        run: cargo test -p mimir-cli parse_version --locked
-
-      - name: Build release asset
-        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          mkdir -p release-assets
-          bash shim/scripts/build-release.sh \
-            --source-dir source \
-            --out release-assets \
-            --platform "${{ matrix.platform }}" \
-            --version "${{ needs.prepare.outputs.release_version }}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@v5
+          sh -n shim/install.sh
+          python shim/scripts/build-release.py --source-dir source --out release-assets --platform "$PLATFORM" --version "$VERSION"
+      - uses: actions/upload-artifact@v5
         with:
           name: mimir-${{ matrix.platform }}
-          path: |
-            release-assets/mimir-${{ matrix.platform }}.*
-          if-no-files-found: error
+          path: release-assets/mimir-*.*
           retention-days: 7
-
-  stage-release:
-    needs:
-      - prepare
-      - build
-    runs-on: ubuntu-latest
+  stage:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
     permissions:
-      actions: read
       contents: write
     env:
+      GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-      RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
-      SOURCE_REF: ${{ needs.prepare.outputs.source_ref }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_REF: ${{ needs.prepare.outputs.source }}
     steps:
-      - name: Download release assets
-        uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v5
         with:
-          path: downloaded-assets
-
-      - name: Prepare and validate release payload
-        shell: bash
+          pattern: mimir-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish candidate for real download verification
+        working-directory: release-assets
         run: |
           set -euo pipefail
-          mkdir -p release-assets
-          find downloaded-assets -type f -name 'mimir-*' -exec cp {} release-assets/ \;
-          cd release-assets
-
-          expected_assets=(
-            mimir-linux-x64.tar.gz
-            mimir-windows-x64.zip
-          )
-
-          for asset in "${expected_assets[@]}"; do
-            test -f "$asset"
-          done
-
-          rm -f ./*.sha256
-          sha256sum "${expected_assets[@]}" > SHA256SUMS
+          assets=(mimir-linux-x64.tar.gz mimir-windows-x64.zip mimir-darwin-x64.tar.gz mimir-darwin-arm64.tar.gz)
+          for asset in "${assets[@]}"; do test -f "$asset"; done
+          sha256sum "${assets[@]}" > SHA256SUMS
           sha256sum -c SHA256SUMS
-
-          cat > RELEASE_NOTES.md <<EOF
-          # Mimir ${RELEASE_VERSION}
-
-          Built from private source ref \`${SOURCE_REF}\`.
-
-          ## Assets
-
-          - linux x64: \`mimir-linux-x64.tar.gz\`
-          - Windows x64: \`mimir-windows-x64.zip\`
-
-          Verify downloads with \`SHA256SUMS\`.
-          EOF
-
-          expected_names="$(printf '%s\n' "${expected_assets[@]}" SHA256SUMS RELEASE_NOTES.md | sort)"
-          actual_names="$(find . -maxdepth 1 -type f -printf '%f\n' | sort)"
-          if [[ "$actual_names" != "$expected_names" ]]; then
-            echo "Unexpected release asset set" >&2
-            diff -u <(printf '%s\n' "$expected_names") <(printf '%s\n' "$actual_names") || true
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite its assets.' >&2
             exit 1
           fi
-
-      - name: Create draft GitHub Release and upload assets
+          printf 'Mimir %s\n\nSource commit: `%s`.\n\nEach archive includes the configure-mimir skill and all references. Native install verification is pending.\n' "$VERSION" "$SOURCE_REF" > notes.md
+          gh release create "v$VERSION" --prerelease --title "v$VERSION" --notes-file notes.md "${assets[@]}" SHA256SUMS
+  install:
+    needs: [prepare, stage]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, windows-2022, macos-15-intel, macos-15]
+    runs-on: ${{ matrix.runner }}
+    env:
+      MIMIR_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Real curl installation and same-version repair
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          cd release-assets
-
-          existing_release="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || true)"
-          if [[ "$existing_release" == "false" ]]; then
-            echo "::error::GitHub Release $RELEASE_TAG is already published. Refusing to mutate it."
-            exit 1
-          fi
-          if [[ "$existing_release" == "true" ]]; then
-            gh release delete "$RELEASE_TAG" --yes
-          fi
-
-          gh release create "$RELEASE_TAG" \
-            --draft \
-            --title "$RELEASE_TAG" \
-            --notes-file RELEASE_NOTES.md \
-            mimir-linux-x64.tar.gz \
-            mimir-windows-x64.zip \
-            RELEASE_NOTES.md \
-            SHA256SUMS
-
-          expected_asset_names="$(printf '%s\n' mimir-linux-x64.tar.gz mimir-windows-x64.zip SHA256SUMS RELEASE_NOTES.md | sort)"
-          actual_asset_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort)"
-          if [[ "$actual_asset_names" != "$expected_asset_names" ]]; then
-            echo "::error::Draft GitHub Release asset set does not match expected files."
-            diff -u <(printf '%s\n' "$expected_asset_names") <(printf '%s\n' "$actual_asset_names") || true
-            exit 1
-          fi
-
-      - name: Publish staged GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          test_temp="$RUNNER_TEMP"
+          if command -v cygpath >/dev/null 2>&1; then test_temp=$(cygpath -u "$test_temp"); fi
+          export MIMIR_INSTALL_DIR="$test_temp/Mimir install café"
+          curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
+          "$MIMIR_INSTALL_DIR/mimir" --version
+          python tests/skill.py "$MIMIR_INSTALL_DIR/mimir${{ runner.os == 'Windows' && '.exe' || '' }}"
+          test -f "$HOME/.agents/skills/configure-mimir/references/settings-and-precedence.md"
+          rm "$HOME/.agents/skills/configure-mimir/references/settings-and-precedence.md"
+          curl -fsSL https://mimir.kernelvm.xyz/install.sh | sh
+          test -f "$HOME/.agents/skills/configure-mimir/references/settings-and-precedence.md"
+      - name: Native PowerShell 5.1 installation
+        if: runner.os == 'Windows'
+        shell: powershell
         run: |
-          set -euo pipefail
-          existing_release="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || true)"
-          if [[ "$existing_release" != "true" ]]; then
-            echo "::error::Draft GitHub Release $RELEASE_TAG does not exist."
-            exit 1
-          fi
-          gh release edit "$RELEASE_TAG" --draft=false
-
-  cleanup-draft-release:
-    needs:
-      - prepare
-      - stage-release
-    if: ${{ always() && needs.stage-release.result != 'success' && needs.stage-release.result != 'skipped' }}
-    runs-on: ubuntu-latest
+          $env:MIMIR_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'Mimir PowerShell café'
+          irm https://mimir.kernelvm.xyz/install.ps1 | iex
+          & (Join-Path $env:MIMIR_INSTALL_DIR 'mimir.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed executable failed' }
+          if (-not (Test-Path "$env:USERPROFILE\.agents\skills\configure-mimir\SKILL.md")) { throw 'Skill missing' }
+      - name: Native PowerShell 7 reinstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:MIMIR_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'Mimir PowerShell café'
+          irm https://mimir.kernelvm.xyz/install.ps1 | iex
+          & (Join-Path $env:MIMIR_INSTALL_DIR 'mimir.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed executable failed' }
+  publish:
+    needs: [prepare, install]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SOURCE_REF: ${{ needs.prepare.outputs.source }}
     steps:
-      - name: Delete failed draft release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
+      - run: |
           set -euo pipefail
-          existing_release="$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null || true)"
-          if [[ "$existing_release" == "true" ]]; then
-            gh release delete "$RELEASE_TAG" --yes
-          fi
+          printf 'Mimir %s\n\nSource commit: `%s`.\n\nNative installation verified on Linux x64, Windows x64, macOS Intel and Apple Silicon. Each archive includes configure-mimir and its references. Verify downloads with SHA256SUMS.\n' "$VERSION" "$SOURCE_REF" > notes.md
+          gh release edit "v$VERSION" --prerelease=false --latest --notes-file notes.md
