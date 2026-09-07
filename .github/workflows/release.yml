@@ -93,6 +93,12 @@ jobs:
           set -euo pipefail
           sh -n shim/install.sh
           python shim/scripts/build-release.py --source-dir source --out release-assets --platform "$PLATFORM" --version "$VERSION"
+      - name: Windows PowerShell subprocess regression
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          cargo test --manifest-path source/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p mimir-tools windows_powershell -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell subprocess regression failed' }
       - uses: actions/upload-artifact@v5
         with:
           name: mimir-${{ matrix.platform }}
