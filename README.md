@@ -31,8 +31,9 @@ other skills, settings, credentials, and plugins are untouched.
 The shell installer detects Rosetta and selects the native Apple Silicon build.
 Linux ARM64 and Windows ARM64 are not published. Installation needs no Rust or
 Node toolchain. The shell installer uses curl, tar and sha256sum or shasum;
-Git Bash also supplies cygpath. PowerShell uses its built-in download and ZIP
-commands. macOS binaries are not notarized.
+Git Bash also supplies cygpath, and extracts the Windows archive with unzip,
+PowerShell, or tar, whichever is available. PowerShell uses its built-in
+download and ZIP commands. macOS binaries are not notarized.
 
 ## Options
 
@@ -50,6 +51,9 @@ $env:MIMIR_VERSION = '0.2.3'
 $env:MIMIR_INSTALL_DIR = "$env:USERPROFILE\.mimir\bin"
 irm https://mimir.kernelvm.xyz/install.ps1 | iex
 ```
+
+A pinned version without a matching release fails before any download, with a
+link to the available releases instead of a raw 404 mid-download.
 
 Binary location: `MIMIR_INSTALL_DIR`, then `XDG_BIN_DIR` (shell installer), then
 `~/.mimir/bin`. Root-owned Google Colab notebooks default to `/usr/local/bin`.

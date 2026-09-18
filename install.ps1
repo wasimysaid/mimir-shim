@@ -17,7 +17,12 @@ function Normalize-Version([string]$Value) {
 }
 
 function Download([string]$Uri, [string]$Destination) {
-    Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing -Headers @{ 'User-Agent' = 'mimir-installer' }
+    try {
+        Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing -Headers @{ 'User-Agent' = 'mimir-installer' }
+    }
+    catch {
+        throw "Could not download $Uri. $($_.Exception.Message)"
+    }
 }
 
 function Add-InstallPath([string]$Directory) {
@@ -65,11 +70,29 @@ Installs configure-mimir into %USERPROFILE%\.agents\skills\configure-mimir.
         else {
             $resolved = $Version
             if (-not $resolved) {
-                $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$ReleaseRepo/releases/latest" -Headers @{ 'User-Agent' = 'mimir-installer' }
-                $resolved = [string]$release.tag_name
+                try {
+                    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$ReleaseRepo/releases/latest" -Headers @{ 'User-Agent' = 'mimir-installer' }
+                    $resolved = [string]$release.tag_name
+                }
+                catch {
+                    throw "Could not resolve the latest release from GitHub. $($_.Exception.Message)"
+                }
             }
             $resolved = Normalize-Version $resolved
             if (-not $resolved) { throw 'Could not resolve release version.' }
+            $tagStatusCode = 0
+            try {
+                $tagResponse = Invoke-WebRequest -Uri "https://github.com/$ReleaseRepo/releases/tag/v$resolved" -Method Head -UseBasicParsing -Headers @{ 'User-Agent' = 'mimir-installer' }
+                $tagStatusCode = [int]$tagResponse.StatusCode
+            }
+            catch {
+                if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) {
+                    $tagStatusCode = [int]$_.Exception.Response.StatusCode
+                }
+            }
+            if ($tagStatusCode -eq 404) {
+                throw "Release v$resolved not found. Available releases: https://github.com/$ReleaseRepo/releases"
+            }
             $baseUrl = "https://github.com/$ReleaseRepo/releases/download/v$resolved"
             $archive = Join-Path $staging 'mimir-windows-x64.zip'
             $checksums = Join-Path $staging 'SHA256SUMS'

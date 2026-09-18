@@ -1,7 +1,6 @@
 #!/bin/sh
 set -eu
 
-APP=mimir
 MIMIR_RELEASE_REPO=${MIMIR_RELEASE_REPO:-wasimysaid/mimir-shim}
 version=${MIMIR_VERSION:-}
 binary_source=
@@ -117,16 +116,28 @@ else
     require curl
     require tar
     if [ -z "$version" ]; then
-        release=$(curl -fsSL --retry 3 "https://api.github.com/repos/$MIMIR_RELEASE_REPO/releases/latest")
+        if ! release=$(curl -fsSL --retry 3 "https://api.github.com/repos/$MIMIR_RELEASE_REPO/releases/latest"); then
+            fail 'could not resolve the latest release from GitHub'
+        fi
         version=$(printf '%s\n' "$release" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
+    else
+        version=${version#v}
+        http_code=$(curl -sI -o /dev/null -w '%{http_code}' --retry 3 "https://github.com/$MIMIR_RELEASE_REPO/releases/tag/v$version" || true)
+        if [ "$http_code" = 404 ]; then
+            fail "release v$version not found; available releases: https://github.com/$MIMIR_RELEASE_REPO/releases"
+        fi
     fi
     version=${version#v}
     [ -n "$version" ] || fail 'could not resolve release version'
     filename=mimir-$target.$extension
     base_url=https://github.com/$MIMIR_RELEASE_REPO/releases/download/v$version
     printf 'Installing Mimir %s for %s\n' "$version" "$target"
-    curl -fL --retry 3 --progress-bar "$base_url/$filename" -o "$staging/$filename"
-    curl -fsSL --retry 3 "$base_url/SHA256SUMS" -o "$staging/SHA256SUMS"
+    if ! curl -fL --retry 3 --progress-bar "$base_url/$filename" -o "$staging/$filename"; then
+        fail "could not download $filename from release v$version"
+    fi
+    if ! curl -fsSL --retry 3 "$base_url/SHA256SUMS" -o "$staging/SHA256SUMS"; then
+        fail "could not download SHA256SUMS from release v$version"
+    fi
     awk -v file="$filename" '$2 == file { print }' "$staging/SHA256SUMS" > "$staging/selected.sha256"
     [ "$(wc -l < "$staging/selected.sha256" | tr -d ' ')" = 1 ] || fail 'missing or duplicate archive checksum'
     if command -v sha256sum >/dev/null 2>&1; then
@@ -139,6 +150,11 @@ else
     if [ "$os" = windows ]; then
         if command -v unzip >/dev/null 2>&1; then
             unzip -q "$staging/$filename" -d "$staging"
+        elif command -v powershell.exe >/dev/null 2>&1; then
+            # Git Bash ships GNU tar, which cannot read zip archives.
+            archive_win=$(cygpath -w "$staging/$filename" | sed "s/'/''/g")
+            staging_win=$(cygpath -w "$staging" | sed "s/'/''/g")
+            powershell.exe -NoProfile -NonInteractive -Command "Expand-Archive -LiteralPath '$archive_win' -DestinationPath '$staging_win' -Force" >/dev/null
         else
             tar -xf "$staging/$filename" -C "$staging"
         fi
