@@ -124,7 +124,7 @@ Installs configure-mimir into %USERPROFILE%\.agents\skills\configure-mimir.
         }
         Add-InstallPath $destination
         Write-Host "Installed Mimir $actual to $destination\mimir.exe"
-        Write-Host 'Run: mimir. Open a new terminal to use it elsewhere.'
+        Write-Host 'Run: mimir. This session''s PATH is updated already; open a new terminal elsewhere.'
     }
     finally {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue

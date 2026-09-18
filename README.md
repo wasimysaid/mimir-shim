@@ -59,7 +59,11 @@ Binary location: `MIMIR_INSTALL_DIR`, then `XDG_BIN_DIR` (shell installer), then
 `~/.mimir/bin`. Root-owned Google Colab notebooks default to `/usr/local/bin`.
 The skill location is independent of `MIMIR_CODING_AGENT_DIR`, matching Mimir's
 normal global skill discovery. Git Bash and PowerShell use the native Windows
-user home. Open a new terminal after installation for persistent PATH changes.
+user home. The shell installer prints the exact command to reload the current
+shell — `source` for bash, zsh and fish (`hash -r` included for bash, whose
+command cache can otherwise keep resolving an older Mimir), `.` for POSIX sh.
+PowerShell's `irm | iex` runs in-session, so its PATH update applies to the
+current session immediately.
 
 Rerun the installer to upgrade or repair the same version, including missing skill
 files. Close a running Windows Mimir before replacing its executable. For local

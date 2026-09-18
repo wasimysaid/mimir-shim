@@ -6,6 +6,8 @@ version=${MIMIR_VERSION:-}
 binary_source=
 no_modify_path=false
 
+reload_hint=
+
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || fail "'$1' is required"; }
 usage() {
@@ -84,17 +86,21 @@ configure_path() {
     case "$(basename "${SHELL:-sh}")" in
         fish)
             set -- "${XDG_CONFIG_HOME:-$user_dir/.config}/fish/config.fish"
+            reload_hint="source \"$1\""
             path_line="fish_add_path -- \"$quoted\"" ;;
         zsh)
             set -- "${ZDOTDIR:-$user_dir}/.zshrc"
+            reload_hint="source \"$1\""
             path_line="case \":\$PATH:\" in *\":$quoted:\"*) ;; *) export PATH=\"$quoted:\$PATH\" ;; esac" ;;
         bash)
             login_profile=$user_dir/.profile
             if [ -f "$user_dir/.bash_profile" ]; then login_profile=$user_dir/.bash_profile; fi
             set -- "$user_dir/.bashrc" "$login_profile"
+            reload_hint="source \"$1\" && hash -r"
             path_line="case \":\$PATH:\" in *\":$quoted:\"*) ;; *) export PATH=\"$quoted:\$PATH\" ;; esac" ;;
         *)
             set -- "$user_dir/.profile"
+            reload_hint=". \"$1\""
             path_line="case \":\$PATH:\" in *\":$quoted:\"*) ;; *) export PATH=\"$quoted:\$PATH\" ;; esac" ;;
     esac
     for profile in "$@"; do
@@ -177,4 +183,7 @@ if [ -z "$binary_source" ]; then
 fi
 configure_path
 printf 'Installed Mimir %s to %s/%s\n' "$actual" "$install_dir" "$binary_name"
-printf 'Open a new terminal, or run: "%s/%s"\n' "$install_dir" "$binary_name"
+printf 'Run it now: "%s/%s"\n' "$install_dir" "$binary_name"
+if [ -n "$reload_hint" ]; then
+    printf 'To run "mimir" in this shell, reload it (or open a new terminal): %s\n' "$reload_hint"
+fi
